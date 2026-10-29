@@ -131,3 +131,29 @@ KURALLAR
 - PowerShell dosyalarını UTF-8 BOM'lu kaydet (Türkçe karakter için).
 - Değişiklikten sonra commit + push yap (main). İki kişi çalışıyoruz: push öncesi git pull --rebase.
 ```
+
+## Sunucu güvenlik duvarı: IP izinleri (WinRM 5985)
+
+Deploy (`deploy\deploy.ps1`) PowerShell remoting (WinRM, TCP 5985) kullanır. Sunucuda 5985 herkese değil, yalnızca izinli IP'lere açıktır:
+
+| Kural | Port | İzinli IP | Not |
+|---|---|---|---|
+| `WinRM-gecici` | 5985 | `78.174.104.213` | proje sahibinin bilgisayarı |
+| `PostgreSQL-uzak` | 5432 | `78.174.104.213` | aynı bilgisayar; veritabanı dışarıya yalnızca buraya açık |
+| `WinRM-diger-pc` | 5985 | `188.57.104.65` | ikinci geliştirici bilgisayarı (29 Ekim 2026'da eklendi) |
+
+RDP (3389) herkese açıktır. Veritabanı (5432) ve `pg_hba.conf` ikinci bilgisayara **açılmadı**; deploy için gerekmez.
+
+**Ev IP'si değişirse** (yeni IP'yi `(Invoke-RestMethod https://api.ipify.org)` ile öğrenin):
+
+```powershell
+# Sunucuda (RDP ile girip yönetici PowerShell'de, ya da izinli bilgisayardan Invoke-Command ile)
+Set-NetFirewallRule -DisplayName 'WinRM-diger-pc' -RemoteAddress 1.2.3.4          # değiştir
+Set-NetFirewallRule -DisplayName 'WinRM-diger-pc' -RemoteAddress 1.2.3.4,5.6.7.8  # birden fazla IP
+Get-NetFirewallRule -DisplayName 'WinRM-diger-pc' | Get-NetFirewallAddressFilter   # kontrol
+Remove-NetFirewallRule -DisplayName 'WinRM-diger-pc'                                # kaldır
+```
+
+Client'ta bağlantı testi: `Test-NetConnection 31.57.77.179 -Port 5985` (`TcpTestSucceeded : True`). IP ile bağlanırken hata alırsanız, yönetici PowerShell'de bir kez: `Set-Item WSMan:\localhost\Client\TrustedHosts -Value 31.57.77.179 -Force`.
+
+**Claude için kalıcı talimat:** proje sahibi yeni bir IP verip "izin ekle" derse, onay sormadan o IP'yi `WinRM-diger-pc` kuralının `RemoteAddress` listesine **ekle** (mevcut IP'leri koru), kuralı doğrula ve sonucu bildir. Bu yalnızca WinRM 5985 içindir; 5432, `pg_hba.conf` ve diğer güvenlik ayarları için ayrıca onay gerekir. Yönetici şifresi bu dosyaya yazılmaz.
