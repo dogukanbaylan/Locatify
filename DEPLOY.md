@@ -76,3 +76,55 @@ Loglar: `C:\pm2\logs\mapkesif-*.log`, `C:\pm2\logs\caddy-error.log`. Sunucuda `E
 
 - Google Maps tarafında bot kontrolü / onay penceresi çıkabilir; sunucuda Chromium headless çalışır. Sorun olursa `C:\pm2\logs\mapkesif-*.log` bakın.
 - Otomatik toplama Google'ın kullanım şartlarıyla çelişebilir; yalnızca toplamaya izinli olduğunuz veriler için kullanın.
+
+## Geçmiş sekmesi ve veritabanı (güncel durum)
+
+- Sol menüde **Arama** ve **Geçmiş** sekmeleri var. Her arama ve her işletme okunurken PostgreSQL'e yazılır (`db.py`: `searches` ve `places` tabloları); iptal/hata olsa da o ana kadar okunan veri kaybolmaz. Geçmişten Excel/CSV yeniden indirilebilir (`/api/history/{id}/excel`).
+- Bağlantı `DATABASE_URL` ortam değişkeniyle verilir; sunucuda `C:\inetpub\mapkesif\.env` içinde durur (repoya girmez). `DATABASE_URL` yoksa uygulama çalışır, Geçmiş sekmesi "veritabanına ulaşılamıyor" der (yerel geliştirmede de böyle).
+- **Bekleyen:** sunucuda `mapkesif` adlı ayrı veritabanı ve kullanıcı henüz oluşturulmadı. PostgreSQL yönetici rolü (`postgres` / `dbadmin`) şifresi gerekir; `tasktakip_app` rolü veritabanı oluşturamaz. Şifre proje sahibinden istenir. Kurulumdan sonra: ayrı rol + veritabanı (yetkisi yalnızca kendi veritabanında), `.env` içine `DATABASE_URL=postgresql://mapkesif:<parola>@127.0.0.1:5432/mapkesif`, `pm2 restart mapkesif`, bir arama deneyip Geçmiş'te göründüğünü doğrula, günlük `pg_dump` yedeği ekle (tasktakip'in `C:\backups\yedekle.ps1` düzenine benzer). `pg_hba.conf`'a dokunma.
+
+## Başka bilgisayardaki Claude için prompt
+
+Aşağıdaki metni yeni oturumun başına yapıştırın:
+
+```
+Locatify (mapkesif.tr) projesini devralıyorsun. Önce repoyu çek: git pull origin main
+Sonra DEPLOY.md dosyasını oku; ardından aşağıdaki özeti esas al.
+
+SUNUCU VE DEPLOY
+- Sunucu: Windows Server 2025, 31.57.77.179, kullanıcı Administrator (WinRM/RDP).
+  tasktakip.tr de aynı sunucuda çalışıyor, ONU BOZMA.
+  Şifreyi repoya/dosyaya YAZMA, benden iste. Deploy için oturumda ortam değişkeni olarak ver:
+    $env:TT_DEPLOY_PASS = '<şifre>'
+- Mimari: Caddy (80/443, otomatik Let's Encrypt) alan adına göre yönlendirir:
+    tasktakip.tr -> https://127.0.0.1:8443 (tasktakip, pm2)
+    mapkesif.tr  -> http://127.0.0.1:8000  (Locatify, pm2 uygulaması "mapkesif")
+- Locatify sunucuda C:\inetpub\mapkesif (main.py, db.py, templates/, exports/, venv/),
+  Python 3.12 venv, Playwright Chromium C:\playwright-browsers, pm2 (PM2_HOME=C:\pm2).
+- PostgreSQL 18 (C:\PostgreSQL\18) aynı sunucuda; tasktakip kendi veritabanını kullanır.
+  Locatify geçmişi için AYRI veritabanı/kullanıcı kullanılır (DATABASE_URL, sunucuda
+  C:\inetpub\mapkesif\.env). DATABASE_URL yoksa uygulama çalışır ama Geçmiş sekmesi 503 verir.
+
+DEPLOY NASIL YAPILIR (repo kökünden, Windows PowerShell 5.1):
+  $env:TT_DEPLOY_PASS = '<şifre>'
+  powershell -File deploy\deploy.ps1
+Betik şunları yapar:
+  1. main.py, db.py, requirements.txt, templates\* dosyalarını PowerShell remoting
+     (New-PSSession -Authentication Negotiate) ile sunucuya C:\deploytmp\mk-<tarih> altına kopyalar
+     (zip yok, Expand-Archive sunucuda çalışmıyor).
+  2. Sunucuda eski sürümü C:\deploytmp\mk-bak-<tarih> altına yedekler, yenileri C:\inetpub\mapkesif'e
+     koyar (exports/, venv/ ve .env silinmez). requirements.txt değiştiyse pip install çalıştırır.
+  3. index.html içindeki __DEPLOY_VERSION__ yer tutucusunu sürüm damgasıyla değiştirir.
+  4. pm2 restart mapkesif yapar; http://127.0.0.1:8000/ 200 dönene kadar bekler.
+     Dönmezse yedeği geri yükler ve hata verir.
+  5. Dışarıdan https://mapkesif.tr 200 mü diye doğrular.
+Deploy sonrası tasktakip'in bozulmadığını kontrol et:
+  curl.exe -s --resolve tasktakip.tr:443:31.57.77.179 https://tasktakip.tr/api/health  -> {"ok":true}
+
+KURALLAR
+- tasktakip'e, Caddy yapılandırmasına (C:\caddy\Caddyfile) ve PostgreSQL güvenlik ayarlarına
+  (pg_hba.conf) dokunma. Caddy'de değişiklik gerekirse önce caddy validate, sonra reload.
+- pm2 komutlarını sunucuda Start-Process cmd /c "pm2 ... > log 2>&1" -Wait ile, çıktıyı dosyaya alarak çalıştır.
+- PowerShell dosyalarını UTF-8 BOM'lu kaydet (Türkçe karakter için).
+- Değişiklikten sonra commit + push yap (main). İki kişi çalışıyoruz: push öncesi git pull --rebase.
+```
