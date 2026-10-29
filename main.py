@@ -35,9 +35,22 @@ EXCEL_COLUMNS = [
     "Yıldız Puanı",
     "Yorum Sayısı",
     "Kategori",
+    "Konum",
+    "E-posta",
+    "Place ID",
+    "CID",
 ]
 
-FILE_ID_RE = re.compile(r"[a-f0-9]{32}__[A-Za-z0-9._-]{1,80}\.xlsx")
+FILE_ID_RE = re.compile(r"[a-f0-9]{32}__[A-Za-z0-9._-]{1,80}\.(xlsx|csv)")
+COORD_RE = re.compile(r"@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)")
+DATA_COORD_RE = re.compile(r"!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)")
+CHIJ_RE = re.compile(r"(ChIJ[0-9A-Za-z_-]{10,})")
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+]
 END_OF_LIST_RE = re.compile(
     r"reached the end of the list|listenin sonuna ulaştınız|sonuna ulaştınız",
     re.IGNORECASE,
@@ -59,9 +72,17 @@ class SearchRequest(BaseModel):
     headless: bool = True
     max_results: int = Field(15, ge=1, le=40)
     delay: float = Field(3, ge=0, le=60)
+    export_format: str = "xlsx"
+    proxy: str = ""
 
 
-def validate_params(query: str, max_results: int, delay: float) -> tuple[str, float]:
+def validate_params(
+    query: str,
+    max_results: int,
+    delay: float,
+    export_format: str = "xlsx",
+    proxy: str = "",
+) -> tuple[str, float, str, str]:
     query = (query or "").strip()
     if len(query) < 2:
         raise HTTPException(status_code=400, detail="Enter a search of at least 2 characters.")
@@ -71,7 +92,15 @@ def validate_params(query: str, max_results: int, delay: float) -> tuple[str, fl
         raise HTTPException(status_code=400, detail="max_results must be between 1 and 40.")
     if not 0 <= delay <= 60:
         raise HTTPException(status_code=400, detail="delay must be between 0 and 60 seconds.")
-    return query, float(delay)
+    export_format = (export_format or "xlsx").strip().lower()
+    if export_format not in {"xlsx", "csv"}:
+        raise HTTPException(status_code=400, detail="export_format must be xlsx or csv.")
+    proxy = (proxy or "").strip()
+    if len(proxy) > 300:
+        raise HTTPException(status_code=400, detail="Proxy URL is too long.")
+    if proxy:
+        parse_proxy(proxy)
+    return query, float(delay), export_format, proxy
 
 
 def slugify(text: str) -> str:
@@ -196,7 +225,90 @@ def blank_place(name: str = "") -> dict[str, str]:
         "rating": "",
         "review_count": "",
         "category": "",
+        "maps_url": "",
+        "email": "",
+        "place_id": "",
+        "cid": "",
     }
+
+
+def clean_email(value: str) -> str:
+    match = EMAIL_RE.search(value or "")
+    if not match:
+        return ""
+    email = match.group(0).strip(".").lower()
+    if email.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")):
+        return ""
+    return email
+
+
+def coords_from_url(url: str) -> tuple[str, str]:
+    decoded = unquote(url or "")
+    match = COORD_RE.search(decoded) or DATA_COORD_RE.search(decoded)
+    if not match:
+        return "", ""
+    return match.group(1), match.group(2)
+
+
+def ids_from_url(url: str) -> tuple[str, str]:
+    decoded = unquote(url or "")
+    feature = PLACE_ID_RE.search(decoded)
+    chij = CHIJ_RE.search(decoded)
+    place_id = chij.group(1) if chij else (feature.group(1) if feature else "")
+    cid = ""
+    if feature:
+        hex_cid = feature.group(1).split(":")[-1]
+        try:
+            cid = str(int(hex_cid, 16))
+        except ValueError:
+            cid = ""
+    return place_id, cid
+
+
+def maps_place_link(url: str) -> str:
+    decoded = unquote(url or "").strip()
+    if "/maps/" not in decoded:
+        return ""
+    parsed = urlparse(decoded if "://" in decoded else f"https://{decoded}")
+    host = parsed.netloc or "www.google.com"
+    if "google." not in host or not parsed.path:
+        return ""
+    return f"https://{host}{parsed.path}"
+
+
+def apply_url_meta(place: dict[str, str], url: str) -> None:
+    link = maps_place_link(url)
+    if link and "/maps/place/" in link:
+        place["maps_url"] = link
+    elif link and not place.get("maps_url"):
+        place["maps_url"] = link
+    if not place.get("maps_url"):
+        latitude, longitude = coords_from_url(url)
+        if latitude and longitude:
+            place["maps_url"] = f"https://www.google.com/maps/@{latitude},{longitude},17z"
+    place_id, cid = ids_from_url(url)
+    if place_id and not place.get("place_id"):
+        place["place_id"] = place_id
+    if cid and not place.get("cid"):
+        place["cid"] = cid
+
+
+def parse_proxy(proxy: str) -> dict[str, str]:
+    raw = proxy.strip()
+    if "://" not in raw:
+        raw = "http://" + raw
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https", "socks5"} or not parsed.hostname or not parsed.port:
+        raise HTTPException(
+            status_code=400,
+            detail="Proxy URL must look like http://username:password@host:port",
+        )
+    config = {"server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"}
+    if parsed.username:
+        config["username"] = unquote(parsed.username)
+    if parsed.password:
+        config["password"] = unquote(parsed.password)
+    return config
 
 
 def to_excel_row(place: dict[str, str]) -> dict[str, str]:
@@ -208,21 +320,29 @@ def to_excel_row(place: dict[str, str]) -> dict[str, str]:
         "Yıldız Puanı": place.get("rating", ""),
         "Yorum Sayısı": place.get("review_count", ""),
         "Kategori": place.get("category", ""),
+        "Konum": place.get("maps_url", ""),
+        "E-posta": place.get("email", ""),
+        "Place ID": place.get("place_id", ""),
+        "CID": place.get("cid", ""),
     }
 
 
-def save_excel(rows: list[dict[str, str]], query: str) -> dict[str, str]:
+def save_export(rows: list[dict[str, str]], query: str, export_format: str) -> dict[str, str]:
     frame = pd.DataFrame([to_excel_row(row) for row in rows], columns=EXCEL_COLUMNS)
     frame = frame.fillna("").astype(str)
     slug = slugify(query)
-    file_id = f"{uuid.uuid4().hex}__{slug}.xlsx"
+    extension = "csv" if export_format == "csv" else "xlsx"
+    file_id = f"{uuid.uuid4().hex}__{slug}.{extension}"
     path = EXPORT_DIR / file_id
-    frame.to_excel(path, index=False, sheet_name="Sonuçlar")
-    style_workbook(path)
+    if extension == "csv":
+        frame.to_csv(path, index=False, encoding="utf-8-sig")
+    else:
+        frame.to_excel(path, index=False, sheet_name="Sonuçlar")
+        style_workbook(path)
     return {
         "file_id": file_id,
         "download_url": f"/api/download/{file_id}",
-        "filename": f"{slug}.xlsx",
+        "filename": f"{slug}.{extension}",
     }
 
 
@@ -235,21 +355,21 @@ def style_workbook(path: Path) -> None:
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
-    widths = [36, 52, 22, 38, 16, 16, 28]
+    widths = [36, 52, 22, 38, 16, 16, 28, 56, 32, 42, 22]
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
     link_font = Font(color="0F766E", underline="single", name="Calibri")
     body_font = Font(name="Calibri")
-    for row in sheet.iter_rows(min_row=2, max_col=7):
+    for row in sheet.iter_rows(min_row=2, max_col=len(EXCEL_COLUMNS)):
         for cell in row:
             cell.number_format = "@"
             cell.font = body_font
             cell.alignment = Alignment(vertical="center", wrap_text=(cell.column in {1, 2}))
-        website = row[3]
-        value = str(website.value or "")
-        if value.startswith("http"):
-            website.hyperlink = value
-            website.font = link_font
+        for cell in (row[3], row[7]):
+            value = str(cell.value or "")
+            if value.startswith("http"):
+                cell.hyperlink = value
+                cell.font = link_font
     sheet.auto_filter.ref = sheet.dimensions
     sheet.freeze_panes = "A2"
     sheet.row_dimensions[1].height = 22
@@ -328,6 +448,14 @@ EXTRACT_JS = """
     phoneId: phoneEl ? phoneEl.getAttribute("data-item-id") || "" : "",
     websiteHref: webEl ? webEl.getAttribute("href") || "" : "",
     websiteText: textOf(webEl),
+    email: (() => {
+      const mail = document.querySelector("a[href^='mailto:']");
+      if (mail) return (mail.getAttribute("href") || "").replace(/^mailto:/i, "").split("?")[0];
+      const panel = document.querySelector("div[role='main']") || document.body;
+      const found = (panel.innerText || "").match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i);
+      return found ? found[0] : "";
+    })(),
+    href: location.href,
   };
 }
 """
@@ -443,6 +571,7 @@ def normalize_place(raw: dict, fallback_name: str) -> dict[str, str]:
     place["rating"] = pick_rating(raw.get("rating", ""), raw.get("ratingAria", ""))
     place["review_count"] = pick_review_count(raw.get("reviewText", ""), raw.get("reviewAria", ""))
     place["category"] = " ".join((raw.get("category") or "").split())
+    place["email"] = clean_email(raw.get("email", ""))
     return place
 
 
@@ -457,7 +586,10 @@ async def read_open_place(page, fallback_name: str) -> dict[str, str]:
         pass
     await page.wait_for_timeout(400)
     raw = await page.evaluate(EXTRACT_JS)
-    return normalize_place(raw, fallback_name)
+    place = normalize_place(raw, fallback_name)
+    apply_url_meta(place, raw.get("href") or page.url)
+    apply_url_meta(place, page.url)
+    return place
 
 
 def with_english_ui(url: str) -> str:
@@ -478,19 +610,25 @@ async def scrape_maps(
     headless: bool,
     max_results: int,
     delay: float,
+    proxy: str,
     progress,
     stop: asyncio.Event,
 ) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    await progress({"type": "status", "message": "Opening Google Maps…"})
+    await progress({"type": "status", "message": "Opening Google Maps…", "log": True})
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(
-            headless=headless,
-            args=["--disable-blink-features=AutomationControlled", "--lang=en-US"],
-        )
+        launch_args: dict = {
+            "headless": headless,
+            "args": ["--disable-blink-features=AutomationControlled", "--lang=en-US"],
+        }
+        if proxy:
+            launch_args["proxy"] = parse_proxy(proxy)
+            log.info("Using a proxy for this search")
+        browser = await playwright.chromium.launch(**launch_args)
         try:
             context = await browser.new_context(
                 locale="en-US",
+                user_agent=random.choice(USER_AGENTS),
                 viewport={"width": 1440, "height": 900},
                 extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
             )
@@ -510,9 +648,19 @@ async def scrape_maps(
                 if stop.is_set():
                     return rows
                 place = await read_open_place(page, query)
+                apply_url_meta(place, page.url)
                 if place["name"]:
                     rows.append(place)
-                    await progress({"type": "place", "index": 1, "total": 1, "place": place})
+                    await progress(
+                        {
+                            "type": "place",
+                            "index": 1,
+                            "total": 1,
+                            "place": place,
+                            "message": f"Scraping 1/1: {place['name']}",
+                            "log": True,
+                        }
+                    )
                 return rows
 
             if not links:
@@ -522,8 +670,9 @@ async def scrape_maps(
             await progress(
                 {
                     "type": "status",
-                    "message": f"Reading details for {total} businesses…",
+                    "message": f"Scraping 0/{total}: reading business details",
                     "total": total,
+                    "log": True,
                 }
             )
             for index, link in enumerate(links, start=1):
@@ -533,34 +682,56 @@ async def scrape_maps(
                 if stop.is_set():
                     break
                 fallback_name = link.get("name") or ""
+                status = f"Scraping {index}/{total}: {fallback_name or 'business'}"
                 await progress(
                     {
                         "type": "status",
-                        "message": f"Reading {index} of {total}: {fallback_name or 'business'}",
+                        "message": status,
                         "index": index,
                         "total": total,
+                        "log": True,
                     }
                 )
                 try:
                     await page.goto(with_english_ui(link["href"]), wait_until="domcontentloaded", timeout=45000)
                     await dismiss_consent(page)
                     place = await read_open_place(page, fallback_name)
+                    apply_url_meta(place, link.get("href", ""))
                 except Exception as exc:
                     log.warning("Skipped listing %s: %s", fallback_name, exc)
                     place = blank_place(fallback_name)
+                    apply_url_meta(place, link.get("href", ""))
                 if not place["name"]:
                     continue
                 if not place["review_count"]:
                     place["review_count"] = review_from_card(link.get("card_text", ""))
                 rows.append(place)
                 log.info("Scraped %s (%s)", place["name"], place["phone"] or "no phone")
-                await progress({"type": "place", "index": index, "total": total, "place": place})
+                await progress(
+                    {
+                        "type": "place",
+                        "index": index,
+                        "total": total,
+                        "place": place,
+                        "message": f"Scraped {index}/{total}: {place['name']}",
+                        "log": True,
+                    }
+                )
             return rows
         finally:
             await browser.close()
 
 
-async def run_scrape(query: str, headless: bool, max_results: int, delay: float, progress, stop: asyncio.Event) -> None:
+async def run_scrape(
+    query: str,
+    headless: bool,
+    max_results: int,
+    delay: float,
+    export_format: str,
+    proxy: str,
+    progress,
+    stop: asyncio.Event,
+) -> None:
     if scrape_lock.locked():
         await progress(
             {
@@ -571,7 +742,7 @@ async def run_scrape(query: str, headless: bool, max_results: int, delay: float,
         return
     await scrape_lock.acquire()
     try:
-        rows = await scrape_maps(query, headless, max_results, delay, progress, stop)
+        rows = await scrape_maps(query, headless, max_results, delay, proxy, progress, stop)
         if stop.is_set() and not rows:
             return
         if not rows:
@@ -582,7 +753,7 @@ async def run_scrape(query: str, headless: bool, max_results: int, delay: float,
                 }
             )
             return
-        saved = save_excel(rows, query)
+        saved = save_export(rows, query, export_format)
         log.info("Saved %s rows to %s", len(rows), saved["file_id"])
         await progress(
             {
@@ -591,6 +762,8 @@ async def run_scrape(query: str, headless: bool, max_results: int, delay: float,
                 "download_url": saved["download_url"],
                 "filename": saved["filename"],
                 "cancelled": stop.is_set(),
+                "message": f"Saved {len(rows)} businesses to {saved['filename']}",
+                "log": True,
             }
         )
     except asyncio.CancelledError:
@@ -602,28 +775,44 @@ async def run_scrape(query: str, headless: bool, max_results: int, delay: float,
         scrape_lock.release()
 
 
-def excel_response(saved: dict[str, str]) -> FileResponse:
+def file_response(saved: dict[str, str]) -> FileResponse:
     path = resolve_export(saved["file_id"])
-    return FileResponse(
-        path,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=saved["filename"],
+    media = (
+        "text/csv; charset=utf-8"
+        if path.suffix == ".csv"
+        else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+    return FileResponse(path, media_type=media, filename=saved["filename"])
 
 
-async def scrape_to_file(query: str, headless: bool, max_results: int, delay: float) -> FileResponse:
+async def scrape_to_file(
+    query: str,
+    headless: bool,
+    max_results: int,
+    delay: float,
+    export_format: str,
+    proxy: str,
+) -> FileResponse:
     if scrape_lock.locked():
         raise HTTPException(status_code=409, detail="Another search is already running.")
     await scrape_lock.acquire()
     try:
-        rows = await scrape_maps(query, headless, max_results, delay, progress=noop_progress, stop=asyncio.Event())
+        rows = await scrape_maps(
+            query,
+            headless,
+            max_results,
+            delay,
+            proxy,
+            progress=noop_progress,
+            stop=asyncio.Event(),
+        )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=friendly_error(exc)) from exc
     finally:
         scrape_lock.release()
     if not rows:
         raise HTTPException(status_code=404, detail="No businesses found for that search.")
-    return excel_response(save_excel(rows, query))
+    return file_response(save_export(rows, query, export_format))
 
 
 async def noop_progress(_: dict) -> None:
@@ -641,15 +830,19 @@ async def search_get(
     headless: bool = Query(True),
     max_results: int = Query(15, ge=1, le=40),
     delay: float = Query(3, ge=0, le=60),
+    export_format: str = Query("xlsx"),
+    proxy: str = Query(""),
 ) -> FileResponse:
-    query, delay = validate_params(query, max_results, delay)
-    return await scrape_to_file(query, headless, max_results, delay)
+    query, delay, export_format, proxy = validate_params(query, max_results, delay, export_format, proxy)
+    return await scrape_to_file(query, headless, max_results, delay, export_format, proxy)
 
 
 @app.post("/api/search")
 async def search_post(body: SearchRequest) -> FileResponse:
-    query, delay = validate_params(body.query, body.max_results, body.delay)
-    return await scrape_to_file(query, body.headless, body.max_results, delay)
+    query, delay, export_format, proxy = validate_params(
+        body.query, body.max_results, body.delay, body.export_format, body.proxy
+    )
+    return await scrape_to_file(query, body.headless, body.max_results, delay, export_format, proxy)
 
 
 @app.get("/api/stream")
@@ -659,8 +852,10 @@ async def search_stream(
     headless: bool = Query(True),
     max_results: int = Query(15, ge=1, le=40),
     delay: float = Query(3, ge=0, le=60),
+    export_format: str = Query("xlsx"),
+    proxy: str = Query(""),
 ) -> StreamingResponse:
-    query, delay = validate_params(query, max_results, delay)
+    query, delay, export_format, proxy = validate_params(query, max_results, delay, export_format, proxy)
     if scrape_lock.locked():
         raise HTTPException(status_code=409, detail="Another search is already running.")
 
@@ -672,7 +867,7 @@ async def search_stream(
 
     async def runner() -> None:
         try:
-            await run_scrape(query, headless, max_results, delay, progress, stop)
+            await run_scrape(query, headless, max_results, delay, export_format, proxy, progress, stop)
         finally:
             await queue.put(None)
 
@@ -714,12 +909,12 @@ async def search_stream(
 @app.get("/api/download/{file_id}")
 async def download(file_id: str) -> FileResponse:
     path = resolve_export(file_id)
-    slug = file_id.split("__", 1)[1]
-    return FileResponse(
-        path,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=slug,
+    media = (
+        "text/csv; charset=utf-8"
+        if path.suffix == ".csv"
+        else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+    return FileResponse(path, media_type=media, filename=file_id.split("__", 1)[1])
 
 
 if __name__ == "__main__":

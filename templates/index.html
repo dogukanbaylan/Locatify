@@ -68,7 +68,7 @@
         </span>
         <div>
           <p class="text-sm font-semibold tracking-tight">Locatify</p>
-          <p class="text-xs text-slate-500 dark:text-slate-400">Google Maps business export</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Google Maps business export · <span id="appVersion">__DEPLOY_VERSION__</span></p>
         </div>
       </div>
       <button id="themeToggle" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-white/20" aria-label="Toggle color theme">
@@ -128,12 +128,23 @@
               <span class="text-xs font-medium uppercase tracking-wide text-slate-500">Delay (seconds)</span>
               <input id="delaySeconds" type="number" min="0" max="60" step="0.5" value="3" class="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-center text-sm outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/30 dark:border-white/10 dark:bg-[#0c131b]" />
             </label>
+            <label class="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300" for="exportFormat">
+              <span class="text-xs font-medium uppercase tracking-wide text-slate-500">Export</span>
+              <select id="exportFormat" class="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/30 dark:border-white/10 dark:bg-[#0c131b]">
+                <option value="xlsx">Excel (.xlsx)</option>
+                <option value="csv">CSV (.csv)</option>
+              </select>
+            </label>
           </div>
           <label class="inline-flex cursor-pointer items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
             <input id="showBrowser" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
             Show browser window
           </label>
         </div>
+        <label class="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300 sm:flex-row sm:items-center" for="proxyUrl">
+          <span class="text-xs font-medium uppercase tracking-wide text-slate-500 sm:w-28">Proxy</span>
+          <input id="proxyUrl" type="text" placeholder="Optional, http://user:pass@host:port" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/30 dark:border-white/10 dark:bg-[#0c131b]" />
+        </label>
       </form>
 
       <div id="progressWrap" class="mt-4 hidden">
@@ -141,6 +152,7 @@
           <div id="progressBar" class="bar-indeterminate h-full rounded-full bg-teal-500"></div>
         </div>
         <p id="statusText" class="mt-2 text-sm text-slate-600 dark:text-slate-300"></p>
+        <ul id="logList" class="mt-3 hidden max-h-36 space-y-1 overflow-y-auto font-mono text-xs text-slate-500 dark:text-slate-400"></ul>
       </div>
       <p id="errorText" class="mt-4 hidden rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200"></p>
     </section>
@@ -152,12 +164,12 @@
           <p id="resultMeta" class="text-xs text-slate-500 dark:text-slate-400">Run a search to see businesses here.</p>
         </div>
         <a id="downloadBtn" href="#" class="pointer-events-none inline-flex h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white opacity-40 dark:bg-white dark:text-slate-900" aria-disabled="true">
-          Download Excel
+          Download
         </a>
       </div>
 
       <div class="table-scroll overflow-x-auto">
-        <table class="min-w-[980px] w-full text-left text-sm">
+        <table class="min-w-[1400px] w-full text-left text-sm">
           <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
             <tr>
               <th class="px-4 py-3 font-medium">#</th>
@@ -168,6 +180,10 @@
               <th class="px-4 py-3 font-medium">Rating</th>
               <th class="px-4 py-3 font-medium">Reviews</th>
               <th class="px-4 py-3 font-medium">Category</th>
+              <th class="px-4 py-3 font-medium">Konum</th>
+              <th class="px-4 py-3 font-medium">Email</th>
+              <th class="px-4 py-3 font-medium">Place ID</th>
+              <th class="px-4 py-3 font-medium">CID</th>
             </tr>
           </thead>
           <tbody id="resultsBody"></tbody>
@@ -184,6 +200,8 @@
   </main>
 
   <script>
+    const appVersion = document.getElementById("appVersion");
+    if (appVersion && appVersion.textContent.trim() === "__DEPLOY_VERSION__") appVersion.textContent = "dev";
     const form = document.getElementById("searchForm");
     const queryInput = document.getElementById("query");
     const ilSelect = document.getElementById("ilSelect");
@@ -223,6 +241,9 @@
     ilSelect.addEventListener("change", fillDistricts);
     const maxResults = document.getElementById("maxResults");
     const delaySeconds = document.getElementById("delaySeconds");
+    const exportFormat = document.getElementById("exportFormat");
+    const proxyUrl = document.getElementById("proxyUrl");
+    const logList = document.getElementById("logList");
     const showBrowser = document.getElementById("showBrowser");
     const startBtn = document.getElementById("startBtn");
     const startIcon = document.getElementById("startIcon");
@@ -275,6 +296,8 @@
       ilceSelect.disabled = busy || !ilSelect.value;
       maxResults.disabled = busy;
       delaySeconds.disabled = busy;
+      exportFormat.disabled = busy;
+      proxyUrl.disabled = busy;
       showBrowser.disabled = busy;
       startIcon.classList.toggle("hidden", !busy);
       startLabel.textContent = busy ? "Scraping" : "Start scraping";
@@ -357,6 +380,10 @@
         place.rating,
         place.review_count,
         place.category,
+        place.maps_url,
+        place.email,
+        place.place_id,
+        place.cid,
       ];
 
       values.forEach((value, index) => {
@@ -365,7 +392,7 @@
         if (index === 0) td.classList.add("text-slate-400");
         if (index === 1) td.classList.add("font-medium");
         if (index === 2) td.classList.add("max-w-xs", "whitespace-normal", "text-slate-600", "dark:text-slate-300");
-        if (index === 4) {
+        if (index === 4 || index === 8) {
           const href = safeUrl(value);
           if (!href) {
             td.appendChild(dash());
@@ -375,7 +402,7 @@
             link.target = "_blank";
             link.rel = "noopener noreferrer";
             link.className = "text-teal-700 underline decoration-teal-600/30 underline-offset-2 dark:text-teal-300";
-            link.textContent = href.replace(/^https?:\/\//, "").replace(/\/$/, "");
+            link.textContent = index === 8 ? "Haritada aç" : href.replace(/^https?:\/\//, "").replace(/\/$/, "");
             td.appendChild(link);
           }
         } else if (index === 5 && (value || "").trim()) {
@@ -401,6 +428,8 @@
       emptyState.classList.remove("hidden");
       resultMeta.textContent = "Reading listings…";
       resetDownload();
+      logList.replaceChildren();
+      logList.classList.add("hidden");
     }
 
     function stopTimer() {
@@ -438,7 +467,9 @@
         headless: showBrowser.checked ? "false" : "true",
         max_results: String(Math.min(40, Math.max(1, Number(maxResults.value) || 10))),
         delay: String(delay),
+        export_format: exportFormat.value === "csv" ? "csv" : "xlsx",
       });
+      if (proxyUrl.value.trim()) params.set("proxy", proxyUrl.value.trim());
 
       try {
         const response = await fetch("/api/stream?" + params.toString(), {
@@ -487,7 +518,17 @@
       }
     });
 
+    function appendLog(text) {
+      if (!text) return;
+      logList.classList.remove("hidden");
+      const item = document.createElement("li");
+      item.textContent = elapsed() + "  " + text;
+      logList.appendChild(item);
+      logList.scrollTop = logList.scrollHeight;
+    }
+
     function handleEvent(message) {
+      if (message.log) appendLog(message.message);
       if (message.type === "status") {
         statusText.dataset.base = message.message;
         statusText.textContent = message.message + " · " + elapsed();
@@ -498,6 +539,10 @@
       if (message.type === "place") {
         addRow(message.place || {});
         if (message.index && message.total) setProgress(message.index, message.total);
+        if (message.message) {
+          statusText.dataset.base = message.message;
+          statusText.textContent = message.message + " · " + elapsed();
+        }
         return;
       }
       if (message.type === "done") {
@@ -505,7 +550,9 @@
         const label = "Saved " + message.count + (message.count === 1 ? " business" : " businesses");
         statusText.dataset.base = label;
         statusText.textContent = label + " · " + elapsed();
-        resultMeta.textContent = label + ". The Excel file is ready.";
+        const kind = (message.filename || "").endsWith(".csv") ? "CSV" : "Excel";
+        resultMeta.textContent = label + ". The " + kind + " file is ready.";
+        downloadBtn.textContent = "Download " + kind;
         if (message.download_url) enableDownload(message.download_url, message.filename);
         return;
       }

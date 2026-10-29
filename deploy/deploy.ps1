@@ -19,16 +19,17 @@ foreach ($f in 'main.py', 'requirements.txt', 'templates\index.html') {
 
 $secure = if ($env:TT_DEPLOY_PASS) { ConvertTo-SecureString $env:TT_DEPLOY_PASS -AsPlainText -Force } else { Read-Host 'Sunucu şifresi' -AsSecureString }
 $cred = New-Object PSCredential($User, $secure)
+$version = 'v' + (Get-Date -Format 'yyyy.MM.dd HH:mm')
 $session = New-PSSession $Server -Credential $cred -Authentication Negotiate
 try {
   $stage = "C:\deploytmp\mk-$stamp"
   Invoke-Command $session -ArgumentList $stage { param($stage) New-Item -ItemType Directory -Force "$stage\templates" | Out-Null }
   Copy-Item "$repo\main.py", "$repo\requirements.txt" -Destination $stage -ToSession $session
   Copy-Item "$repo\templates\*" -Destination "$stage\templates" -ToSession $session
-  Write-Host 'Dosyalar sunucuya gönderildi, yerleştiriliyor' -ForegroundColor Cyan
+  Write-Host "Dosyalar sunucuya gönderildi ($version), yerleştiriliyor" -ForegroundColor Cyan
 
-  $result = Invoke-Command $session -ArgumentList $stage, $stamp -ScriptBlock {
-    param($stage, $stamp)
+  $result = Invoke-Command $session -ArgumentList $stage, $stamp, $version -ScriptBlock {
+    param($stage, $stamp, $version)
     $ErrorActionPreference = 'Stop'
     $app = 'C:\inetpub\mapkesif'
     $bak = "C:\deploytmp\mk-bak-$stamp"
@@ -50,6 +51,11 @@ try {
     New-Item -ItemType Directory -Force "$bak\templates" | Out-Null
     Copy-Item "$app\main.py", "$app\requirements.txt" $bak -Force
     Copy-Item "$app\templates\*" "$bak\templates" -Force
+
+    $index = Join-Path $stage 'templates\index.html'
+    $html = [IO.File]::ReadAllText($index)
+    if ($html -notlike '*__DEPLOY_VERSION__*') { throw 'index.html içinde __DEPLOY_VERSION__ yok.' }
+    [IO.File]::WriteAllText($index, $html.Replace('__DEPLOY_VERSION__', $version))
 
     $old = (Get-FileHash "$app\requirements.txt").Hash
     Copy-Item "$stage\main.py", "$stage\requirements.txt" $app -Force
