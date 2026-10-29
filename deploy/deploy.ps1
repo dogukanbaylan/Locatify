@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 
-foreach ($f in 'main.py', 'requirements.txt', 'templates\index.html') {
+foreach ($f in 'main.py', 'db.py', 'requirements.txt', 'templates\index.html') {
   if (-not (Test-Path "$repo\$f")) { throw "$f bulunamadı, repo kökünden çalıştırın." }
 }
 
@@ -24,7 +24,7 @@ $session = New-PSSession $Server -Credential $cred -Authentication Negotiate
 try {
   $stage = "C:\deploytmp\mk-$stamp"
   Invoke-Command $session -ArgumentList $stage { param($stage) New-Item -ItemType Directory -Force "$stage\templates" | Out-Null }
-  Copy-Item "$repo\main.py", "$repo\requirements.txt" -Destination $stage -ToSession $session
+  Copy-Item "$repo\main.py", "$repo\db.py", "$repo\requirements.txt" -Destination $stage -ToSession $session
   Copy-Item "$repo\templates\*" -Destination "$stage\templates" -ToSession $session
   Write-Host "Dosyalar sunucuya gönderildi ($version), yerleştiriliyor" -ForegroundColor Cyan
 
@@ -50,6 +50,7 @@ try {
     # Geri alma noktası (yalnızca kod)
     New-Item -ItemType Directory -Force "$bak\templates" | Out-Null
     Copy-Item "$app\main.py", "$app\requirements.txt" $bak -Force
+    if (Test-Path "$app\db.py") { Copy-Item "$app\db.py" $bak -Force }
     Copy-Item "$app\templates\*" "$bak\templates" -Force
 
     $index = Join-Path $stage 'templates\index.html'
@@ -58,7 +59,7 @@ try {
     [IO.File]::WriteAllText($index, $html.Replace('__DEPLOY_VERSION__', $version))
 
     $old = (Get-FileHash "$app\requirements.txt").Hash
-    Copy-Item "$stage\main.py", "$stage\requirements.txt" $app -Force
+    Copy-Item "$stage\main.py", "$stage\db.py", "$stage\requirements.txt" $app -Force
     Copy-Item "$stage\templates\*" "$app\templates" -Force
 
     $installed = $false
@@ -71,6 +72,7 @@ try {
     $ok = Healthy
     if (-not $ok) {
       Copy-Item "$bak\main.py", "$bak\requirements.txt" $app -Force
+      if (Test-Path "$bak\db.py") { Copy-Item "$bak\db.py" $app -Force }
       Copy-Item "$bak\templates\*" "$app\templates" -Force
       Restart
     }

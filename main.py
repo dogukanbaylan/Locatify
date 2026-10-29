@@ -5,16 +5,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
 import re
 import unicodedata
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -22,10 +25,27 @@ from playwright.async_api import TimeoutError as PlaywrightTimeout
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, Field
 
+import db
+
 BASE_DIR = Path(__file__).resolve().parent
 EXPORT_DIR = BASE_DIR / "exports"
 TEMPLATE_PATH = BASE_DIR / "templates" / "index.html"
 EXPORT_DIR.mkdir(exist_ok=True)
+
+
+def load_env_file(path: Path) -> None:
+    """Load KEY=VALUE lines from .env without overriding variables that are already set."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
+load_env_file(BASE_DIR / ".env")
 
 EXCEL_COLUMNS = [
     "İşletme Adı",
@@ -63,7 +83,15 @@ logging.basicConfig(
 )
 log = logging.getLogger("maps-scraper")
 
-app = FastAPI(title="Locatify", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await db.get_pool()
+    yield
+    await db.close()
+
+
+app = FastAPI(title="Locatify", version="1.0.0", lifespan=lifespan)
 scrape_lock = asyncio.Lock()
 
 
@@ -722,6 +750,40 @@ async def scrape_maps(
             await browser.close()
 
 
+async def scrape_recorded(
+    query: str,
+    headless: bool,
+    max_results: int,
+    delay: float,
+    proxy: str,
+    progress,
+    stop: asyncio.Event,
+) -> tuple[list[dict[str, str]], int | None]:
+    """Run a scrape and store the search and every business in the history database as it is read.
+
+    The proxy is deliberately not stored: it can contain credentials.
+    """
+    search_id = await db.start_search(query, max_results, delay)
+    saved = 0
+
+    async def recording_progress(event: dict) -> None:
+        nonlocal saved
+        if event.get("type") == "place":
+            saved += 1
+            await db.add_place(search_id, saved, event["place"])
+        await progress(event)
+
+    try:
+        rows = await scrape_maps(query, headless, max_results, delay, proxy, recording_progress, stop)
+    except asyncio.CancelledError:
+        await db.finish_search(search_id, "cancelled", saved)
+        raise
+    except Exception as exc:
+        await db.finish_search(search_id, "error", saved, error=friendly_error(exc))
+        raise
+    return rows, search_id
+
+
 async def run_scrape(
     query: str,
     headless: bool,
@@ -742,10 +804,12 @@ async def run_scrape(
         return
     await scrape_lock.acquire()
     try:
-        rows = await scrape_maps(query, headless, max_results, delay, proxy, progress, stop)
+        rows, search_id = await scrape_recorded(query, headless, max_results, delay, proxy, progress, stop)
         if stop.is_set() and not rows:
+            await db.finish_search(search_id, "cancelled", 0)
             return
         if not rows:
+            await db.finish_search(search_id, "error", 0, error="No businesses found.")
             await progress(
                 {
                     "type": "error",
@@ -753,7 +817,14 @@ async def run_scrape(
                 }
             )
             return
-        saved = save_export(rows, query, export_format)
+        try:
+            saved = save_export(rows, query, export_format)
+        except Exception:
+            await db.finish_search(search_id, "error", len(rows), error="Export file could not be created.")
+            raise
+        await db.finish_search(
+            search_id, "cancelled" if stop.is_set() else "done", len(rows), file_id=saved["file_id"]
+        )
         log.info("Saved %s rows to %s", len(rows), saved["file_id"])
         await progress(
             {
@@ -764,6 +835,7 @@ async def run_scrape(
                 "cancelled": stop.is_set(),
                 "message": f"Saved {len(rows)} businesses to {saved['filename']}",
                 "log": True,
+                "search_id": search_id,
             }
         )
     except asyncio.CancelledError:
@@ -797,7 +869,7 @@ async def scrape_to_file(
         raise HTTPException(status_code=409, detail="Another search is already running.")
     await scrape_lock.acquire()
     try:
-        rows = await scrape_maps(
+        rows, search_id = await scrape_recorded(
             query,
             headless,
             max_results,
@@ -811,8 +883,11 @@ async def scrape_to_file(
     finally:
         scrape_lock.release()
     if not rows:
+        await db.finish_search(search_id, "error", 0, error="No businesses found.")
         raise HTTPException(status_code=404, detail="No businesses found for that search.")
-    return file_response(save_export(rows, query, export_format))
+    saved = save_export(rows, query, export_format)
+    await db.finish_search(search_id, "done", len(rows), file_id=saved["file_id"])
+    return file_response(saved)
 
 
 async def noop_progress(_: dict) -> None:
@@ -915,6 +990,54 @@ async def download(file_id: str) -> FileResponse:
         else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     return FileResponse(path, media_type=media, filename=file_id.split("__", 1)[1])
+
+
+async def require_history() -> None:
+    if await db.get_pool() is None:
+        raise HTTPException(status_code=503, detail="History database is not available.")
+
+
+@app.get("/api/history")
+async def history_list(
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    q: str = Query("", max_length=200),
+) -> dict:
+    await require_history()
+    result = await db.list_searches(limit, offset, q)
+    if result is None:
+        raise HTTPException(status_code=503, detail="History database is not available.")
+    return result
+
+
+@app.get("/api/history/{search_id}")
+async def history_detail(search_id: int) -> dict:
+    await require_history()
+    result = await db.get_search(search_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Search not found.")
+    return result
+
+
+@app.get("/api/history/{search_id}/excel")
+async def history_excel(search_id: int) -> FileResponse:
+    """Rebuild the Excel file from the database, so it works even if the original file is gone."""
+    await require_history()
+    result = await db.get_search(search_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Search not found.")
+    if not result["places"]:
+        raise HTTPException(status_code=404, detail="This search has no businesses.")
+    temp = EXPORT_DIR / f"tmp-{uuid.uuid4().hex}.xlsx"
+    frame = pd.DataFrame([to_excel_row(place) for place in result["places"]], columns=EXCEL_COLUMNS)
+    frame.fillna("").astype(str).to_excel(temp, index=False, sheet_name="Sonuçlar")
+    style_workbook(temp)
+    return FileResponse(
+        temp,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=f"{slugify(result['query'])}.xlsx",
+        background=BackgroundTask(temp.unlink, missing_ok=True),
+    )
 
 
 if __name__ == "__main__":

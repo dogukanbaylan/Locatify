@@ -47,6 +47,21 @@
       width: 28%;
       animation: indeterminate 1.15s ease-in-out infinite;
     }
+    .navlink {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      border-radius: 0.75rem;
+      padding: 0.55rem 0.75rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #475569;
+      transition: background 0.15s, color 0.15s;
+    }
+    .dark .navlink { color: #94a3b8; }
+    .navlink:hover { background: rgba(100, 116, 139, 0.12); }
+    .navlink[aria-current="page"] { background: rgba(13, 148, 136, 0.12); color: #0f766e; }
+    .dark .navlink[aria-current="page"] { color: #5eead4; }
     .table-scroll::-webkit-scrollbar { height: 10px; width: 10px; }
     .table-scroll::-webkit-scrollbar-thumb {
       background: rgba(148, 163, 184, 0.45);
@@ -57,9 +72,36 @@
 <body class="min-h-screen bg-slate-100 text-slate-900 antialiased dark:bg-[#0b1117] dark:text-slate-100">
   <div class="pointer-events-none fixed inset-x-0 top-0 h-40 bg-gradient-to-b from-teal-500/10 to-transparent"></div>
 
+  <div class="relative md:flex">
+  <aside class="hidden w-60 shrink-0 flex-col gap-6 border-r border-slate-200/80 bg-white/70 px-4 py-5 backdrop-blur dark:border-white/10 dark:bg-[#0b1117]/70 md:sticky md:top-0 md:flex md:h-screen">
+    <div class="flex items-center gap-3 px-1">
+      <span class="grid h-10 w-10 place-items-center rounded-xl bg-teal-600 text-white shadow-sm">
+        <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11z"></path>
+          <circle cx="12" cy="10" r="2.2"></circle>
+        </svg>
+      </span>
+      <div>
+        <p class="text-sm font-semibold tracking-tight">Locatify</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Google Maps business export</p>
+      </div>
+    </div>
+    <nav class="flex flex-col gap-1" aria-label="Ana menü">
+      <a href="#/arama" data-nav="search" class="navlink">
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m20 20-4.2-4.2"></path></svg>
+        Arama
+      </a>
+      <a href="#/gecmis" data-nav="history" class="navlink">
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path></svg>
+        Geçmiş
+      </a>
+    </nav>
+  </aside>
+
+  <div class="min-w-0 flex-1">
   <header class="relative border-b border-slate-200/80 bg-white/80 backdrop-blur dark:border-white/10 dark:bg-[#0b1117]/80">
-    <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-      <div class="flex items-center gap-3">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6 md:justify-end">
+      <div class="flex items-center gap-3 md:hidden">
         <span class="grid h-10 w-10 place-items-center rounded-xl bg-teal-600 text-white shadow-sm">
           <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11z"></path>
@@ -78,7 +120,13 @@
     </div>
   </header>
 
+  <nav class="mx-auto flex max-w-6xl gap-2 px-4 pt-3 sm:px-6 md:hidden" aria-label="Ana menü">
+    <a href="#/arama" data-nav="search" class="navlink">Arama</a>
+    <a href="#/gecmis" data-nav="history" class="navlink">Geçmiş</a>
+  </nav>
+
   <main class="relative mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <div id="viewSearch">
     <section class="mb-6">
       <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">Collect business listings</h1>
       <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
@@ -197,7 +245,83 @@
     <p class="mt-6 text-xs leading-5 text-slate-500 dark:text-slate-500">
       Phone numbers that Google does not show are left blank. Review counts are included when Maps prints them; the logged-out limited view often hides that number. Each listing is opened so the detail panel can load. Automated collection may conflict with Google’s terms, and a consent dialog or bot check can block a run.
     </p>
+    </div>
+
+    <div id="viewHistory" class="hidden">
+      <section class="mb-6">
+        <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">Geçmiş</h1>
+        <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+          Yapılan tüm aramalar ve çekilen işletmeler veritabanında saklanır. Bir aramayı açıp sonuçlarını görebilir, Excel olarak yeniden indirebilirsiniz.
+        </p>
+      </section>
+
+      <div id="historyList">
+        <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card dark:border-white/10 dark:bg-[#121a22]">
+          <div class="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <p id="historyMeta" class="text-xs text-slate-500 dark:text-slate-400">Yükleniyor…</p>
+            <input id="historyFilter" type="search" maxlength="200" placeholder="Aramalarda ara…" class="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/30 dark:border-white/10 dark:bg-[#0c131b] sm:w-64" />
+          </div>
+          <div class="table-scroll overflow-x-auto">
+            <table class="min-w-[760px] w-full text-left text-sm">
+              <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
+                <tr>
+                  <th class="px-4 py-3 font-medium">Tarih</th>
+                  <th class="px-4 py-3 font-medium">Arama</th>
+                  <th class="px-4 py-3 font-medium">İşletme</th>
+                  <th class="px-4 py-3 font-medium">Durum</th>
+                  <th class="px-4 py-3 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody id="historyBody"></tbody>
+            </table>
+          </div>
+          <p id="historyEmpty" class="hidden px-5 py-14 text-center text-sm text-slate-500 dark:text-slate-400"></p>
+          <div class="flex justify-center border-t border-slate-100 px-4 py-3 dark:border-white/5" id="historyMoreWrap" style="display:none">
+            <button id="historyMore" type="button" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/5">Daha fazla göster</button>
+          </div>
+        </section>
+      </div>
+
+      <div id="historyDetail" class="hidden">
+        <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card dark:border-white/10 dark:bg-[#121a22]">
+          <div class="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div class="min-w-0">
+              <a href="#/gecmis" class="text-xs font-medium text-teal-700 hover:underline dark:text-teal-300">← Geçmişe dön</a>
+              <h2 id="detailTitle" class="mt-1 truncate text-sm font-semibold"></h2>
+              <p id="detailMeta" class="text-xs text-slate-500 dark:text-slate-400"></p>
+            </div>
+            <a id="detailExcel" href="#" class="inline-flex h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900">Excel indir</a>
+          </div>
+          <div class="table-scroll overflow-x-auto">
+            <table class="min-w-[1400px] w-full text-left text-sm">
+              <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
+                <tr>
+                  <th class="px-4 py-3 font-medium">#</th>
+                  <th class="px-4 py-3 font-medium">Name</th>
+                  <th class="px-4 py-3 font-medium">Address</th>
+                  <th class="px-4 py-3 font-medium">Phone</th>
+                  <th class="px-4 py-3 font-medium">Website</th>
+                  <th class="px-4 py-3 font-medium">Rating</th>
+                  <th class="px-4 py-3 font-medium">Reviews</th>
+                  <th class="px-4 py-3 font-medium">Category</th>
+                  <th class="px-4 py-3 font-medium">Konum</th>
+                  <th class="px-4 py-3 font-medium">Email</th>
+                  <th class="px-4 py-3 font-medium">Place ID</th>
+                  <th class="px-4 py-3 font-medium">CID</th>
+                </tr>
+              </thead>
+              <tbody id="detailBody"></tbody>
+            </table>
+          </div>
+          <p id="detailEmpty" class="hidden px-5 py-14 text-center text-sm text-slate-500 dark:text-slate-400">Bu aramada kaydedilmiş işletme yok.</p>
+        </section>
+      </div>
+
+      <p id="historyError" class="mt-4 hidden rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200"></p>
+    </div>
   </main>
+  </div>
+  </div>
 
   <script>
     const appVersion = document.getElementById("appVersion");
@@ -365,14 +489,12 @@
       return "";
     }
 
-    function addRow(place) {
-      rowCount += 1;
-      emptyState.classList.add("hidden");
+    function buildPlaceRow(number, place) {
       const tr = document.createElement("tr");
       tr.className = "border-t border-slate-100 align-top dark:border-white/5";
 
       const values = [
-        String(rowCount),
+        String(number),
         place.name,
         place.address,
         place.phone,
@@ -418,7 +540,13 @@
         }
         tr.appendChild(td);
       });
-      resultsBody.appendChild(tr);
+      return tr;
+    }
+
+    function addRow(place) {
+      rowCount += 1;
+      emptyState.classList.add("hidden");
+      resultsBody.appendChild(buildPlaceRow(rowCount, place));
       resultMeta.textContent = rowCount + (rowCount === 1 ? " business" : " businesses");
     }
 
@@ -568,6 +696,190 @@
     cancelBtn.addEventListener("click", () => {
       if (controller) controller.abort();
     });
+
+    // ---- Menü ve Geçmiş ----
+    const viewSearch = document.getElementById("viewSearch");
+    const viewHistory = document.getElementById("viewHistory");
+    const historyList = document.getElementById("historyList");
+    const historyDetail = document.getElementById("historyDetail");
+    const historyBody = document.getElementById("historyBody");
+    const historyMeta = document.getElementById("historyMeta");
+    const historyEmpty = document.getElementById("historyEmpty");
+    const historyFilter = document.getElementById("historyFilter");
+    const historyMoreWrap = document.getElementById("historyMoreWrap");
+    const historyMore = document.getElementById("historyMore");
+    const historyError = document.getElementById("historyError");
+    const detailTitle = document.getElementById("detailTitle");
+    const detailMeta = document.getElementById("detailMeta");
+    const detailExcel = document.getElementById("detailExcel");
+    const detailBody = document.getElementById("detailBody");
+    const detailEmpty = document.getElementById("detailEmpty");
+
+    const PAGE_SIZE = 30;
+    const STATUS = {
+      done: ["Tamamlandı", "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-300"],
+      cancelled: ["İptal edildi", "bg-amber-100 text-amber-800 dark:bg-amber-400/15 dark:text-amber-300"],
+      error: ["Hata", "bg-rose-100 text-rose-800 dark:bg-rose-400/15 dark:text-rose-300"],
+      running: ["Çalışıyor", "bg-sky-100 text-sky-800 dark:bg-sky-400/15 dark:text-sky-300"],
+      interrupted: ["Yarıda kesildi", "bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-slate-300"],
+    };
+    let historyOffset = 0;
+    let historyTotal = 0;
+    let historyToken = 0;
+    let filterTimer = null;
+
+    function formatDate(iso) {
+      return new Date(iso).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
+    }
+
+    function showHistoryError(message) {
+      historyError.textContent = message;
+      historyError.classList.toggle("hidden", !message);
+    }
+
+    async function fetchJson(url) {
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) {
+        let detail = "İstek başarısız oldu.";
+        try {
+          detail = (await response.json()).detail || detail;
+        } catch (err) {
+          // yanıt JSON değil
+        }
+        throw new Error(response.status === 503 ? "Geçmiş veritabanına şu an ulaşılamıyor." : detail);
+      }
+      return response.json();
+    }
+
+    function historyRow(item) {
+      const tr = document.createElement("tr");
+      tr.className = "border-t border-slate-100 align-middle dark:border-white/5";
+
+      const date = document.createElement("td");
+      date.className = "whitespace-nowrap px-4 py-3 text-slate-500 dark:text-slate-400";
+      date.textContent = formatDate(item.started_at);
+
+      const query = document.createElement("td");
+      query.className = "px-4 py-3 font-medium";
+      query.textContent = item.query;
+
+      const count = document.createElement("td");
+      count.className = "px-4 py-3";
+      count.textContent = String(item.count);
+
+      const statusCell = document.createElement("td");
+      statusCell.className = "px-4 py-3";
+      const [label, classes] = STATUS[item.status] || [item.status, STATUS.interrupted[1]];
+      const badge = document.createElement("span");
+      badge.className = "inline-block rounded-full px-2.5 py-0.5 text-xs font-medium " + classes;
+      badge.textContent = label;
+      if (item.error) badge.title = item.error;
+      statusCell.appendChild(badge);
+
+      const actions = document.createElement("td");
+      actions.className = "whitespace-nowrap px-4 py-3 text-right";
+      const open = document.createElement("a");
+      open.href = "#/gecmis/" + item.id;
+      open.className = "rounded-lg px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-500/10 dark:text-teal-300";
+      open.textContent = "Görüntüle";
+      actions.appendChild(open);
+      if (item.count > 0) {
+        const excel = document.createElement("a");
+        excel.href = "/api/history/" + item.id + "/excel";
+        excel.className = "ml-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-500/10 dark:text-slate-300";
+        excel.textContent = "Excel";
+        actions.appendChild(excel);
+      }
+
+      tr.append(date, query, count, statusCell, actions);
+      return tr;
+    }
+
+    async function loadHistory(reset) {
+      const token = ++historyToken;
+      if (reset) {
+        historyOffset = 0;
+        historyBody.replaceChildren();
+        historyMeta.textContent = "Yükleniyor…";
+        historyEmpty.classList.add("hidden");
+        historyMoreWrap.style.display = "none";
+      }
+      showHistoryError("");
+      try {
+        const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(historyOffset), q: historyFilter.value.trim() });
+        const data = await fetchJson("/api/history?" + params.toString());
+        if (token !== historyToken) return;
+        historyTotal = data.total;
+        for (const item of data.items) historyBody.appendChild(historyRow(item));
+        historyOffset += data.items.length;
+        historyMeta.textContent = historyTotal + " arama";
+        const empty = historyTotal === 0;
+        historyEmpty.textContent = historyFilter.value.trim() ? "Bu ifadeyle eşleşen arama yok." : "Henüz arama yapılmamış.";
+        historyEmpty.classList.toggle("hidden", !empty);
+        historyMoreWrap.style.display = historyOffset >= historyTotal ? "none" : "flex";
+      } catch (err) {
+        if (token !== historyToken) return;
+        historyMeta.textContent = "";
+        showHistoryError(err.message);
+      }
+    }
+
+    async function showDetail(id) {
+      historyList.classList.add("hidden");
+      historyDetail.classList.remove("hidden");
+      showHistoryError("");
+      detailBody.replaceChildren();
+      detailEmpty.classList.add("hidden");
+      detailTitle.textContent = "Yükleniyor…";
+      detailMeta.textContent = "";
+      detailExcel.style.display = "none";
+      try {
+        const data = await fetchJson("/api/history/" + id);
+        if (!historyDetail.classList.contains("hidden") && location.hash === "#/gecmis/" + id) {
+          detailTitle.textContent = data.query;
+          const [label] = STATUS[data.status] || [data.status];
+          detailMeta.textContent = formatDate(data.started_at) + " · " + data.places.length + " işletme · " + label;
+          data.places.forEach((place, index) => detailBody.appendChild(buildPlaceRow(index + 1, place)));
+          detailEmpty.classList.toggle("hidden", data.places.length > 0);
+          if (data.places.length) {
+            detailExcel.href = "/api/history/" + id + "/excel";
+            detailExcel.style.display = "";
+          }
+        }
+      } catch (err) {
+        detailTitle.textContent = "";
+        showHistoryError(err.message);
+      }
+    }
+
+    function route() {
+      const hash = location.hash || "#/arama";
+      const match = hash.match(/^#\/gecmis(?:\/(\d+))?$/);
+      const onHistory = Boolean(match);
+      viewSearch.classList.toggle("hidden", onHistory);
+      viewHistory.classList.toggle("hidden", !onHistory);
+      document.querySelectorAll("[data-nav]").forEach((link) => {
+        const active = link.dataset.nav === (onHistory ? "history" : "search");
+        if (active) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      });
+      if (!onHistory) return;
+      if (match[1]) {
+        showDetail(match[1]);
+      } else {
+        historyDetail.classList.add("hidden");
+        historyList.classList.remove("hidden");
+        loadHistory(true);
+      }
+    }
+
+    historyMore.addEventListener("click", () => loadHistory(false));
+    historyFilter.addEventListener("input", () => {
+      clearTimeout(filterTimer);
+      filterTimer = setTimeout(() => loadHistory(true), 300);
+    });
+    window.addEventListener("hashchange", route);
+    route();
   </script>
 </body>
 </html>
