@@ -81,7 +81,10 @@ Loglar: `C:\pm2\logs\mapkesif-*.log`, `C:\pm2\logs\caddy-error.log`. Sunucuda `E
 
 - Sol menüde **Arama** ve **Geçmiş** sekmeleri var. Her arama ve her işletme okunurken PostgreSQL'e yazılır (`db.py`: `searches` ve `places` tabloları); iptal/hata olsa da o ana kadar okunan veri kaybolmaz. Geçmişten Excel/CSV yeniden indirilebilir (`/api/history/{id}/excel`).
 - Bağlantı `DATABASE_URL` ortam değişkeniyle verilir; sunucuda `C:\inetpub\mapkesif\.env` içinde durur (repoya girmez). `DATABASE_URL` yoksa uygulama çalışır, Geçmiş sekmesi "veritabanına ulaşılamıyor" der (yerel geliştirmede de böyle).
-- **Bekleyen:** sunucuda `mapkesif` adlı ayrı veritabanı ve kullanıcı henüz oluşturulmadı. PostgreSQL yönetici rolü (`postgres` / `dbadmin`) şifresi gerekir; `tasktakip_app` rolü veritabanı oluşturamaz. Şifre proje sahibinden istenir. Kurulumdan sonra: ayrı rol + veritabanı (yetkisi yalnızca kendi veritabanında), `.env` içine `DATABASE_URL=postgresql://mapkesif:<parola>@127.0.0.1:5432/mapkesif`, `pm2 restart mapkesif`, bir arama deneyip Geçmiş'te göründüğünü doğrula, günlük `pg_dump` yedeği ekle (tasktakip'in `C:\backups\yedekle.ps1` düzenine benzer). `pg_hba.conf`'a dokunma.
+- **Kurulu (29 Ekim 2026):** PostgreSQL 18'de ayrı `mapkesif` veritabanı ve `mapkesif` rolü (yalnızca kendi veritabanına yetkili; `tasktakip_app` bu veritabanına bağlanamaz). Bağlantı `C:\inetpub\mapkesif\.env` içinde (yalnızca Administrators/SYSTEM okuyabilir). Tablolar uygulama ilk bağlandığında kendiliğinden oluşur. `deploy.ps1` `.env` dosyasına dokunmaz.
+- **Yedek:** `MapkesifBackup` zamanlanmış görevi her gün 03:30'da `C:ackups\mapkesif-yedekle.ps1` çalıştırır (`pg_dump`, `C:ackups\mapkesif-<tarih>.dump`, son 7 gün tutulur; sonuç `C:ackups\son-yedek-mapkesif.txt`). tasktakip'in yedeğinden bağımsızdır.
+- **Güvenlik notu:** PostgreSQL yönetici şifreleri sunucuda düz metin dosyalarında duruyor (`C:\pginstall\dbadmin.txt`, `C:\pginstall\super.txt`, ayrıca `C:\pginstall\pw.tmp`). Kurulum tamamlandığı için silinmeleri önerilir (proje sahibi karar verir); bu yüzden şifre bu repoya veya sohbete yazılmaz.
+- **Geri yükleme:** `pg_restore -h 127.0.0.1 -U mapkesif -d mapkesif --clean --if-exists C:ackups\mapkesif-<tarih>.dump`
 
 ## Başka bilgisayardaki Claude için prompt
 
