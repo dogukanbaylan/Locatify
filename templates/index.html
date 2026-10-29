@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Locatify</title>
+  <script>
+    (function () {
+      const saved = localStorage.getItem("maps-theme");
+      if (saved === "light") document.documentElement.classList.remove("dark");
+    })();
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Segoe UI", "Inter", "system-ui", "sans-serif"],
+          },
+          boxShadow: {
+            card: "0 1px 2px rgba(15, 23, 42, 0.06), 0 12px 32px rgba(15, 23, 42, 0.06)",
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    html { color-scheme: dark; }
+    html:not(.dark) { color-scheme: light; }
+    body { font-family: "Segoe UI", Inter, system-ui, sans-serif; }
+    .spinner {
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 9999px;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes indeterminate {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(420%); }
+    }
+    .bar-indeterminate {
+      width: 28%;
+      animation: indeterminate 1.15s ease-in-out infinite;
+    }
+    .table-scroll::-webkit-scrollbar { height: 10px; width: 10px; }
+    .table-scroll::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.45);
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-900 antialiased dark:bg-[#0b1117] dark:text-slate-100">
+  <div class="pointer-events-none fixed inset-x-0 top-0 h-40 bg-gradient-to-b from-teal-500/10 to-transparent"></div>
+
+  <header class="relative border-b border-slate-200/80 bg-white/80 backdrop-blur dark:border-white/10 dark:bg-[#0b1117]/80">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+      <div class="flex items-center gap-3">
+        <span class="grid h-10 w-10 place-items-center rounded-xl bg-teal-600 text-white shadow-sm">
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11z"></path>
+            <circle cx="12" cy="10" r="2.2"></circle>
+          </svg>
+        </span>
+        <div>
+          <p class="text-sm font-semibold tracking-tight">Locatify</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Google Maps business export</p>
+        </div>
+      </div>
+      <button id="themeToggle" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-white/20" aria-label="Toggle color theme">
+        <span id="themeIcon" aria-hidden="true"></span>
+        <span id="themeLabel">Light</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="relative mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <section class="mb-6">
+      <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">Collect business listings</h1>
+      <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+        Search Google Maps, preview each listing, and download an Excel file with name, address, phone, website, rating, reviews, and category. Include the city in your search, for example “Konya restoran”.
+      </p>
+    </section>
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-card dark:border-white/10 dark:bg-[#121a22] sm:p-5">
+      <form id="searchForm" class="flex flex-col gap-4">
+        <div class="flex flex-col gap-3 sm:flex-row">
+          <label class="sr-only" for="query">Search</label>
+          <input
+            id="query"
+            name="query"
+            type="text"
+            required
+            minlength="2"
+            maxlength="200"
+            placeholder="Konya restoran"
+            class="h-12 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none ring-teal-500/40 transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 dark:border-white/10 dark:bg-[#0c131b] dark:focus:border-teal-400 dark:focus:bg-[#0c131b]"
+          />
+          <label class="sr-only" for="ilSelect">İl</label>
+          <select id="ilSelect" class="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none ring-teal-500/40 transition focus:border-teal-500 focus:bg-white focus:ring-4 dark:border-white/10 dark:bg-[#0c131b] dark:focus:border-teal-400 sm:w-44">
+            <option value="">İl (isteğe bağlı)</option>
+          </select>
+          <label class="sr-only" for="ilceSelect">İlçe</label>
+          <select id="ilceSelect" disabled class="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none ring-teal-500/40 transition focus:border-teal-500 focus:bg-white focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-[#0c131b] dark:focus:border-teal-400 sm:w-48">
+            <option value="">İlçe (isteğe bağlı)</option>
+          </select>
+          <button id="startBtn" type="submit" class="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-60">
+            <span id="startIcon" class="hidden spinner"></span>
+            <span id="startLabel">Start scraping</span>
+          </button>
+          <button id="cancelBtn" type="button" class="hidden h-12 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/5">
+            Cancel
+          </button>
+        </div>
+
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <label class="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+              <span class="text-xs font-medium uppercase tracking-wide text-slate-500">Results</span>
+              <input id="maxResults" type="number" min="1" max="40" value="10" class="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-center text-sm outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/30 dark:border-white/10 dark:bg-[#0c131b]" />
+              <span class="text-xs text-slate-500">max 40</span>
+            </label>
+            <label class="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300" for="delaySeconds">
+              <span class="text-xs font-medium uppercase tracking-wide text-slate-500">Delay (seconds)</span>
+              <input id="delaySeconds" type="number" min="0" max="60" step="0.5" value="3" class="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-center text-sm outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/30 dark:border-white/10 dark:bg-[#0c131b]" />
+            </label>
+          </div>
+          <label class="inline-flex cursor-pointer items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+            <input id="showBrowser" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+            Show browser window
+          </label>
+        </div>
+      </form>
+
+      <div id="progressWrap" class="mt-4 hidden">
+        <div class="h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
+          <div id="progressBar" class="bar-indeterminate h-full rounded-full bg-teal-500"></div>
+        </div>
+        <p id="statusText" class="mt-2 text-sm text-slate-600 dark:text-slate-300"></p>
+      </div>
+      <p id="errorText" class="mt-4 hidden rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200"></p>
+    </section>
+
+    <section class="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card dark:border-white/10 dark:bg-[#121a22]">
+      <div class="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div>
+          <h2 class="text-sm font-semibold">Preview</h2>
+          <p id="resultMeta" class="text-xs text-slate-500 dark:text-slate-400">Run a search to see businesses here.</p>
+        </div>
+        <a id="downloadBtn" href="#" class="pointer-events-none inline-flex h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white opacity-40 dark:bg-white dark:text-slate-900" aria-disabled="true">
+          Download Excel
+        </a>
+      </div>
+
+      <div class="table-scroll overflow-x-auto">
+        <table class="min-w-[980px] w-full text-left text-sm">
+          <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
+            <tr>
+              <th class="px-4 py-3 font-medium">#</th>
+              <th class="px-4 py-3 font-medium">Name</th>
+              <th class="px-4 py-3 font-medium">Address</th>
+              <th class="px-4 py-3 font-medium">Phone</th>
+              <th class="px-4 py-3 font-medium">Website</th>
+              <th class="px-4 py-3 font-medium">Rating</th>
+              <th class="px-4 py-3 font-medium">Reviews</th>
+              <th class="px-4 py-3 font-medium">Category</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+      <p id="emptyState" class="px-5 py-14 text-center text-sm text-slate-500 dark:text-slate-400">
+        Listings will appear in this table as they are read from Google Maps.
+      </p>
+    </section>
+
+    <p class="mt-6 text-xs leading-5 text-slate-500 dark:text-slate-500">
+      Phone numbers that Google does not show are left blank. Review counts are included when Maps prints them; the logged-out limited view often hides that number. Each listing is opened so the detail panel can load. Automated collection may conflict with Google’s terms, and a consent dialog or bot check can block a run.
+    </p>
+  </main>
+
+  <script>
+    const form = document.getElementById("searchForm");
+    const queryInput = document.getElementById("query");
+    const ilSelect = document.getElementById("ilSelect");
+    const ilceSelect = document.getElementById("ilceSelect");
+    const LOCATIONS = {"Adana":["Aladağ","Ceyhan","Çukurova","Feke","İmamoğlu","Karaisalı","Karataş","Kozan","Pozantı","Saimbeyli","Sarıçam","Seyhan","Tufanbeyli","Yumurtalık","Yüreğir"],"Adıyaman":["Besni","Çelikhan","Gerger","Gölbaşı","Kahta","Merkez","Samsat","Sincik","Tut"],"Afyonkarahisar":["Başmakçı","Bayat","Bolvadin","Çay","Çobanlar","Dazkırı","Dinar","Emirdağ","Evciler","Hocalar","İhsaniye","İscehisar","Kızılören","Merkez","Sandıklı","Sinanpaşa","Sultandağı","Şuhut"],"Ağrı":["Diyadin","Doğubayazıt","Eleşkirt","Hamur","Merkez","Patnos","Taşlıçay","Tutak"],"Amasya":["Göynücek","Gümüşhacıköy","Hamamözü","Merkez","Merzifon","Suluova","Taşova"],"Ankara":["Akyurt","Altındağ","Ayaş","Bala","Beypazarı","Çamlıdere","Çankaya","Çubuk","Elmadağ","Etimesgut","Evren","Gölbaşı","Güdül","Haymana","Kahramankazan","Kalecik","Keçiören","Kızılcahamam","Mamak","Nallıhan","Polatlı","Pursaklar","Sincan","Şereflikoçhisar","Yenimahalle"],"Antalya":["Akseki","Aksu","Alanya","Demre","Döşemealtı","Elmalı","Finike","Gazipaşa","Gündoğmuş","İbradı","Kaş","Kemer","Kepez","Konyaaltı","Korkuteli","Kumluca","Manavgat","Muratpaşa","Serik"],"Artvin":["Ardanuç","Arhavi","Borçka","Hopa","Kemalpaşa","Merkez","Murgul","Şavşat","Yusufeli"],"Aydın":["Bozdoğan","Buharkent","Çine","Didim","Efeler","Germencik","İncirliova","Karacasu","Karpuzlu","Koçarlı","Köşk","Kuşadası","Kuyucak","Nazilli","Söke","Sultanhisar","Yenipazar"],"Balıkesir":["Altıeylül","Ayvalık","Balya","Bandırma","Bigadiç","Burhaniye","Dursunbey","Edremit","Erdek","Gömeç","Gönen","Havran","İvrindi","Karesi","Kepsut","Manyas","Marmara","Savaştepe","Sındırgı","Susurluk"],"Bilecik":["Bozüyük","Gölpazarı","İnhisar","Merkez","Osmaneli","Pazaryeri","Söğüt","Yenipazar"],"Bingöl":["Adaklı","Genç","Karlıova","Kiğı","Merkez","Solhan","Yayladere","Yedisu"],"Bitlis":["Adilcevaz","Ahlat","Güroymak","Hizan","Merkez","Mutki","Tatvan"],"Bolu":["Dörtdivan","Gerede","Göynük","Kıbrıscık","Mengen","Merkez","Mudurnu","Seben","Yeniçağa"],"Burdur":["Ağlasun","Altınyayla","Bucak","Çavdır","Çeltikçi","Gölhisar","Karamanlı","Kemer","Merkez","Tefenni","Yeşilova"],"Bursa":["Büyükorhan","Gemlik","Gürsu","Harmancık","İnegöl","İznik","Karacabey","Keles","Kestel","Mudanya","Mustafakemalpaşa","Nilüfer","Orhaneli","Orhangazi","Osmangazi","Yenişehir","Yıldırım"],"Çanakkale":["Ayvacık","Bayramiç","Biga","Bozcaada","Çan","Eceabat","Ezine","Gelibolu","Gökçeada","Lapseki","Merkez","Yenice"],"Çankırı":["Atkaracalar","Bayramören","Çerkeş","Eldivan","Ilgaz","Kızılırmak","Korgun","Kurşunlu","Merkez","Orta","Şabanözü","Yapraklı"],"Çorum":["Alaca","Bayat","Boğazkale","Dodurga","İskilip","Kargı","Laçin","Mecitözü","Merkez","Oğuzlar","Ortaköy","Osmancık","Sungurlu","Uğurludağ"],"Denizli":["Acıpayam","Babadağ","Baklan","Bekilli","Beyağaç","Bozkurt","Buldan","Çal","Çameli","Çardak","Çivril","Güney","Honaz","Kale","Merkezefendi","Pamukkale","Sarayköy","Serinhisar","Tavas"],"Diyarbakır":["Bağlar","Bismil","Çermik","Çınar","Çüngüş","Dicle","Eğil","Ergani","Hani","Hazro","Kayapınar","Kocaköy","Kulp","Lice","Silvan","Sur","Yenişehir"],"Edirne":["Enez","Havsa","İpsala","Keşan","Lalapaşa","Meriç","Merkez","Süloğlu","Uzunköprü"],"Elazığ":["Ağın","Alacakaya","Arıcak","Baskil","Karakoçan","Keban","Kovancılar","Maden","Merkez","Palu","Sivrice"],"Erzincan":["Çayırlı","İliç","Kemah","Kemaliye","Merkez","Otlukbeli","Refahiye","Tercan","Üzümlü"],"Erzurum":["Aşkale","Aziziye","Çat","Hınıs","Horasan","İspir","Karaçoban","Karayazı","Köprüköy","Narman","Oltu","Olur","Palandöken","Pasinler","Pazaryolu","Şenkaya","Tekman","Tortum","Uzundere","Yakutiye"],"Eskişehir":["Alpu","Beylikova","Çifteler","Günyüzü","Han","İnönü","Mahmudiye","Mihalgazi","Mihalıççık","Odunpazarı","Sarıcakaya","Seyitgazi","Sivrihisar","Tepebaşı"],"Gaziantep":["Araban","İslahiye","Karkamış","Nizip","Nurdağı","Oğuzeli","Şahinbey","Şehitkamil","Yavuzeli"],"Giresun":["Alucra","Bulancak","Çamoluk","Çanakçı","Dereli","Doğankent","Espiye","Eynesil","Görele","Güce","Keşap","Merkez","Piraziz","Şebinkarahisar","Tirebolu","Yağlıdere"],"Gümüşhane":["Kelkit","Köse","Kürtün","Merkez","Şiran","Torul"],"Hakkari":["Çukurca","Derecik","Merkez","Şemdinli","Yüksekova"],"Hatay":["Altınözü","Antakya","Arsuz","Belen","Defne","Dörtyol","Erzin","Hassa","İskenderun","Kırıkhan","Kumlu","Payas","Reyhanlı","Samandağ","Yayladağı"],"Isparta":["Aksu","Atabey","Eğirdir","Gelendost","Gönen","Keçiborlu","Merkez","Senirkent","Sütçüler","Şarkikaraağaç","Uluborlu","Yalvaç","Yenişarbademli"],"Mersin":["Akdeniz","Anamur","Aydıncık","Bozyazı","Çamlıyayla","Erdemli","Gülnar","Mezitli","Mut","Silifke","Tarsus","Toroslar","Yenişehir"],"İstanbul":["Adalar","Arnavutköy","Ataşehir","Avcılar","Bağcılar","Bahçelievler","Bakırköy","Başakşehir","Bayrampaşa","Beşiktaş","Beykoz","Beylikdüzü","Beyoğlu","Büyükçekmece","Çatalca","Çekmeköy","Esenler","Esenyurt","Eyüpsultan","Fatih","Gaziosmanpaşa","Güngören","Kadıköy","Kağıthane","Kartal","Küçükçekmece","Maltepe","Pendik","Sancaktepe","Sarıyer","Silivri","Sultanbeyli","Sultangazi","Şile","Şişli","Tuzla","Ümraniye","Üsküdar","Zeytinburnu"],"İzmir":["Aliağa","Balçova","Bayındır","Bayraklı","Bergama","Beydağ","Bornova","Buca","Çeşme","Çiğli","Dikili","Foça","Gaziemir","Güzelbahçe","Karabağlar","Karaburun","Karşıyaka","Kemalpaşa","Kınık","Kiraz","Konak","Menderes","Menemen","Narlıdere","Ödemiş","Seferihisar","Selçuk","Tire","Torbalı","Urla"],"Kars":["Akyaka","Arpaçay","Digor","Kağızman","Merkez","Sarıkamış","Selim","Susuz"],"Kastamonu":["Abana","Ağlı","Araç","Azdavay","Bozkurt","Cide","Çatalzeytin","Daday","Devrekani","Doğanyurt","Hanönü","İhsangazi","İnebolu","Küre","Merkez","Pınarbaşı","Seydiler","Şenpazar","Taşköprü","Tosya"],"Kayseri":["Akkışla","Bünyan","Develi","Felahiye","Hacılar","İncesu","Kocasinan","Melikgazi","Özvatan","Pınarbaşı","Sarıoğlan","Sarız","Talas","Tomarza","Yahyalı","Yeşilhisar"],"Kırklareli":["Babaeski","Demirköy","Kofçaz","Lüleburgaz","Merkez","Pehlivanköy","Pınarhisar","Vize"],"Kırşehir":["Akçakent","Akpınar","Boztepe","Çiçekdağı","Kaman","Merkez","Mucur"],"Kocaeli":["Başiskele","Çayırova","Darıca","Derince","Dilovası","Gebze","Gölcük","İzmit","Kandıra","Karamürsel","Kartepe","Körfez"],"Konya":["Ahırlı","Akören","Akşehir","Altınekin","Beyşehir","Bozkır","Cihanbeyli","Çeltik","Çumra","Derbent","Derebucak","Doğanhisar","Emirgazi","Ereğli","Güneysınır","Hadim","Halkapınar","Hüyük","Ilgın","Kadınhanı","Karapınar","Karatay","Kulu","Meram","Sarayönü","Selçuklu","Seydişehir","Taşkent","Tuzlukçu","Yalıhüyük","Yunak"],"Kütahya":["Altıntaş","Aslanapa","Çavdarhisar","Domaniç","Dumlupınar","Emet","Gediz","Hisarcık","Merkez","Pazarlar","Simav","Şaphane","Tavşanlı"],"Malatya":["Akçadağ","Arapgir","Arguvan","Battalgazi","Darende","Doğanşehir","Doğanyol","Hekimhan","Kale","Kuluncak","Pütürge","Yazıhan","Yeşilyurt"],"Manisa":["Ahmetli","Akhisar","Alaşehir","Demirci","Gölmarmara","Gördes","Kırkağaç","Köprübaşı","Kula","Salihli","Sarıgöl","Saruhanlı","Selendi","Soma","Şehzadeler","Turgutlu","Yunusemre"],"Kahramanmaraş":["Afşin","Andırın","Çağlayancerit","Dulkadiroğlu","Ekinözü","Elbistan","Göksun","Nurhak","Onikişubat","Pazarcık","Türkoğlu"],"Mardin":["Artuklu","Dargeçit","Derik","Kızıltepe","Mazıdağı","Midyat","Nusaybin","Ömerli","Savur","Yeşilli"],"Muğla":["Bodrum","Dalaman","Datça","Fethiye","Kavaklıdere","Köyceğiz","Marmaris","Menteşe","Milas","Ortaca","Seydikemer","Ula","Yatağan"],"Muş":["Bulanık","Hasköy","Korkut","Malazgirt","Merkez","Varto"],"Nevşehir":["Acıgöl","Avanos","Derinkuyu","Gülşehir","Hacıbektaş","Kozaklı","Merkez","Ürgüp"],"Niğde":["Altunhisar","Bor","Çamardı","Çiftlik","Merkez","Ulukışla"],"Ordu":["Akkuş","Altınordu","Aybastı","Çamaş","Çatalpınar","Çaybaşı","Fatsa","Gölköy","Gülyalı","Gürgentepe","İkizce","Kabadüz","Kabataş","Korgan","Kumru","Mesudiye","Perşembe","Ulubey","Ünye"],"Rize":["Ardeşen","Çamlıhemşin","Çayeli","Derepazarı","Fındıklı","Güneysu","Hemşin","İkizdere","İyidere","Kalkandere","Merkez","Pazar"],"Sakarya":["Adapazarı","Akyazı","Arifiye","Erenler","Ferizli","Geyve","Hendek","Karapürçek","Karasu","Kaynarca","Kocaali","Pamukova","Sapanca","Serdivan","Söğütlü","Taraklı"],"Samsun":["Alaçam","Asarcık","Atakum","Ayvacık","Bafra","Canik","Çarşamba","Havza","İlkadım","Kavak","Ladik","Salıpazarı","Tekkeköy","Terme","Vezirköprü","Yakakent","19 Mayıs"],"Siirt":["Baykan","Eruh","Kurtalan","Merkez","Pervari","Şirvan","Tillo"],"Sinop":["Ayancık","Boyabat","Dikmen","Durağan","Erfelek","Gerze","Merkez","Saraydüzü","Türkeli"],"Sivas":["Akıncılar","Altınyayla","Divriği","Doğanşar","Gemerek","Gölova","Gürün","Hafik","İmranlı","Kangal","Koyulhisar","Merkez","Suşehri","Şarkışla","Ulaş","Yıldızeli","Zara"],"Tekirdağ":["Çerkezköy","Çorlu","Ergene","Hayrabolu","Kapaklı","Malkara","Marmaraereğlisi","Muratlı","Saray","Süleymanpaşa","Şarköy"],"Tokat":["Almus","Artova","Başçiftlik","Erbaa","Merkez","Niksar","Pazar","Reşadiye","Sulusaray","Turhal","Yeşilyurt","Zile"],"Trabzon":["Akçaabat","Araklı","Arsin","Beşikdüzü","Çarşıbaşı","Çaykara","Dernekpazarı","Düzköy","Hayrat","Köprübaşı","Maçka","Of","Ortahisar","Sürmene","Şalpazarı","Tonya","Vakfıkebir","Yomra"],"Tunceli":["Çemişgezek","Hozat","Mazgirt","Merkez","Nazımiye","Ovacık","Pertek","Pülümür"],"Şanlıurfa":["Akçakale","Birecik","Bozova","Ceylanpınar","Eyyübiye","Halfeti","Haliliye","Harran","Hilvan","Karaköprü","Siverek","Suruç","Viranşehir"],"Uşak":["Banaz","Eşme","Karahallı","Merkez","Sivaslı","Ulubey"],"Van":["Bahçesaray","Başkale","Çaldıran","Çatak","Edremit","Erciş","Gevaş","Gürpınar","İpekyolu","Muradiye","Özalp","Saray","Tuşba"],"Yozgat":["Akdağmadeni","Aydıncık","Boğazlıyan","Çandır","Çayıralan","Çekerek","Kadışehri","Merkez","Saraykent","Sarıkaya","Sorgun","Şefaatli","Yenifakılı","Yerköy"],"Zonguldak":["Alaplı","Çaycuma","Devrek","Ereğli","Gökçebey","Kilimli","Kozlu","Merkez"],"Aksaray":["Ağaçören","Eskil","Gülağaç","Güzelyurt","Merkez","Ortaköy","Sarıyahşi","Sultanhanı"],"Bayburt":["Aydıntepe","Demirözü","Merkez"],"Karaman":["Ayrancı","Başyayla","Ermenek","Kazımkarabekir","Merkez","Sarıveliler"],"Kırıkkale":["Bahşılı","Balışeyh","Çelebi","Delice","Karakeçili","Keskin","Merkez","Sulakyurt","Yahşihan"],"Batman":["Beşiri","Gercüş","Hasankeyf","Kozluk","Merkez","Sason"],"Şırnak":["Beytüşşebap","Cizre","Güçlükonak","İdil","Merkez","Silopi","Uludere"],"Bartın":["Amasra","Kurucaşile","Merkez","Ulus"],"Ardahan":["Çıldır","Damal","Göle","Hanak","Merkez","Posof"],"Iğdır":["Aralık","Karakoyunlu","Merkez","Tuzluca"],"Yalova":["Altınova","Armutlu","Çınarcık","Çiftlikköy","Merkez","Termal"],"Karabük":["Eflani","Eskipazar","Merkez","Ovacık","Safranbolu","Yenice"],"Kilis":["Elbeyli","Merkez","Musabeyli","Polateli"],"Osmaniye":["Bahçe","Düziçi","Hasanbeyli","Kadirli","Merkez","Sumbas","Toprakkale"],"Düzce":["Akçakoca","Cumayeri","Çilimli","Gölyaka","Gümüşova","Kaynaşlı","Merkez","Yığılca"]};
+
+    function fillProvinces() {
+      const names = Object.keys(LOCATIONS).sort((a, b) => a.localeCompare(b, "tr"));
+      for (const name of names) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        ilSelect.appendChild(option);
+      }
+    }
+
+    function fillDistricts() {
+      const province = ilSelect.value;
+      const current = ilceSelect.value;
+      ilceSelect.replaceChildren();
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "İlçe (isteğe bağlı)";
+      ilceSelect.appendChild(placeholder);
+      const districts = LOCATIONS[province] || [];
+      for (const name of districts) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        ilceSelect.appendChild(option);
+      }
+      ilceSelect.disabled = !province;
+      if (province && districts.includes(current)) ilceSelect.value = current;
+    }
+
+    fillProvinces();
+    ilSelect.addEventListener("change", fillDistricts);
+    const maxResults = document.getElementById("maxResults");
+    const delaySeconds = document.getElementById("delaySeconds");
+    const showBrowser = document.getElementById("showBrowser");
+    const startBtn = document.getElementById("startBtn");
+    const startIcon = document.getElementById("startIcon");
+    const startLabel = document.getElementById("startLabel");
+    const cancelBtn = document.getElementById("cancelBtn");
+    const progressWrap = document.getElementById("progressWrap");
+    const progressBar = document.getElementById("progressBar");
+    const statusText = document.getElementById("statusText");
+    const errorText = document.getElementById("errorText");
+    const resultsBody = document.getElementById("resultsBody");
+    const emptyState = document.getElementById("emptyState");
+    const resultMeta = document.getElementById("resultMeta");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const themeToggle = document.getElementById("themeToggle");
+    const themeLabel = document.getElementById("themeLabel");
+    const themeIcon = document.getElementById("themeIcon");
+
+    let controller = null;
+    let timer = null;
+    let startedAt = 0;
+    let rowCount = 0;
+
+    const sunIcon = '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"></circle><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"></path></svg>';
+    const moonIcon = '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 14.5A8.5 8.5 0 1 1 9.5 3 7 7 0 0 0 21 14.5z"></path></svg>';
+
+    function syncThemeButton() {
+      const dark = document.documentElement.classList.contains("dark");
+      themeLabel.textContent = dark ? "Light" : "Dark";
+      themeIcon.innerHTML = dark ? sunIcon : moonIcon;
+    }
+
+    themeToggle.addEventListener("click", () => {
+      const dark = document.documentElement.classList.toggle("dark");
+      localStorage.setItem("maps-theme", dark ? "dark" : "light");
+      syncThemeButton();
+    });
+    syncThemeButton();
+
+    function elapsed() {
+      const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      const mins = String(Math.floor(seconds / 60)).padStart(1, "0");
+      const secs = String(seconds % 60).padStart(2, "0");
+      return mins + ":" + secs;
+    }
+
+    function setBusy(busy) {
+      startBtn.disabled = busy;
+      queryInput.disabled = busy;
+      ilSelect.disabled = busy;
+      ilceSelect.disabled = busy || !ilSelect.value;
+      maxResults.disabled = busy;
+      delaySeconds.disabled = busy;
+      showBrowser.disabled = busy;
+      startIcon.classList.toggle("hidden", !busy);
+      startLabel.textContent = busy ? "Scraping" : "Start scraping";
+      cancelBtn.classList.toggle("hidden", !busy);
+      cancelBtn.classList.toggle("inline-flex", busy);
+    }
+
+    function showError(message) {
+      errorText.textContent = message;
+      errorText.classList.remove("hidden");
+    }
+
+    function clearError() {
+      errorText.textContent = "";
+      errorText.classList.add("hidden");
+    }
+
+    function setIndeterminate() {
+      progressBar.style.width = "";
+      progressBar.classList.add("bar-indeterminate");
+    }
+
+    function setProgress(index, total) {
+      progressBar.classList.remove("bar-indeterminate");
+      const pct = total ? Math.min(100, Math.round((index / total) * 100)) : 0;
+      progressBar.style.width = pct + "%";
+    }
+
+    function resetDownload() {
+      downloadBtn.href = "#";
+      downloadBtn.classList.add("pointer-events-none", "opacity-40");
+      downloadBtn.setAttribute("aria-disabled", "true");
+      downloadBtn.removeAttribute("download");
+    }
+
+    function enableDownload(url, filename) {
+      downloadBtn.href = url;
+      downloadBtn.download = filename || "";
+      downloadBtn.classList.remove("pointer-events-none", "opacity-40");
+      downloadBtn.setAttribute("aria-disabled", "false");
+    }
+
+    function dash() {
+      const span = document.createElement("span");
+      span.className = "text-slate-400";
+      span.textContent = "—";
+      return span;
+    }
+
+    function cellText(value) {
+      const text = (value || "").trim();
+      if (!text) return dash();
+      const span = document.createElement("span");
+      span.textContent = text;
+      return span;
+    }
+
+    function safeUrl(value) {
+      try {
+        const url = new URL(value);
+        if (url.protocol === "http:" || url.protocol === "https:") return url.href;
+      } catch (err) {
+        return "";
+      }
+      return "";
+    }
+
+    function addRow(place) {
+      rowCount += 1;
+      emptyState.classList.add("hidden");
+      const tr = document.createElement("tr");
+      tr.className = "border-t border-slate-100 align-top dark:border-white/5";
+
+      const values = [
+        String(rowCount),
+        place.name,
+        place.address,
+        place.phone,
+        place.website,
+        place.rating,
+        place.review_count,
+        place.category,
+      ];
+
+      values.forEach((value, index) => {
+        const td = document.createElement("td");
+        td.className = "px-4 py-3";
+        if (index === 0) td.classList.add("text-slate-400");
+        if (index === 1) td.classList.add("font-medium");
+        if (index === 2) td.classList.add("max-w-xs", "whitespace-normal", "text-slate-600", "dark:text-slate-300");
+        if (index === 4) {
+          const href = safeUrl(value);
+          if (!href) {
+            td.appendChild(dash());
+          } else {
+            const link = document.createElement("a");
+            link.href = href;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.className = "text-teal-700 underline decoration-teal-600/30 underline-offset-2 dark:text-teal-300";
+            link.textContent = href.replace(/^https?:\/\//, "").replace(/\/$/, "");
+            td.appendChild(link);
+          }
+        } else if (index === 5 && (value || "").trim()) {
+          const wrap = document.createElement("span");
+          wrap.className = "inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-300";
+          wrap.appendChild(document.createTextNode("★"));
+          const num = document.createElement("span");
+          num.textContent = value;
+          wrap.appendChild(num);
+          td.appendChild(wrap);
+        } else {
+          td.appendChild(cellText(value));
+        }
+        tr.appendChild(td);
+      });
+      resultsBody.appendChild(tr);
+      resultMeta.textContent = rowCount + (rowCount === 1 ? " business" : " businesses");
+    }
+
+    function resetTable() {
+      resultsBody.replaceChildren();
+      rowCount = 0;
+      emptyState.classList.remove("hidden");
+      resultMeta.textContent = "Reading listings…";
+      resetDownload();
+    }
+
+    function stopTimer() {
+      if (timer) clearInterval(timer);
+      timer = null;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      let query = queryInput.value.trim();
+      if (query.length < 2) return;
+      if (ilSelect.value) query += " " + ilSelect.value;
+      if (ilceSelect.value) query += " " + ilceSelect.value;
+
+      if (controller) controller.abort();
+      controller = new AbortController();
+      clearError();
+      resetTable();
+      setBusy(true);
+      progressWrap.classList.remove("hidden");
+      setIndeterminate();
+      startedAt = Date.now();
+      statusText.textContent = "Starting… " + elapsed();
+      stopTimer();
+      timer = setInterval(() => {
+        if (statusText.dataset.base) {
+          statusText.textContent = statusText.dataset.base + " · " + elapsed();
+        }
+      }, 500);
+
+      const parsedDelay = Number(delaySeconds.value);
+      const delay = Number.isFinite(parsedDelay) ? Math.min(60, Math.max(0, parsedDelay)) : 3;
+      const params = new URLSearchParams({
+        query,
+        headless: showBrowser.checked ? "false" : "true",
+        max_results: String(Math.min(40, Math.max(1, Number(maxResults.value) || 10))),
+        delay: String(delay),
+      });
+
+      try {
+        const response = await fetch("/api/stream?" + params.toString(), {
+          signal: controller.signal,
+          headers: { Accept: "text/event-stream" },
+        });
+        if (!response.ok) {
+          let detail = "Search failed.";
+          try {
+            const body = await response.json();
+            detail = body.detail || detail;
+          } catch (err) {
+            detail = await response.text();
+          }
+          throw new Error(detail);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          buffer += decoder.decode(chunk.value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+          for (const part of parts) {
+            const line = part.split("\n").find((item) => item.startsWith("data:"));
+            if (!line) continue;
+            handleEvent(JSON.parse(line.slice(5).trim()));
+          }
+        }
+      } catch (err) {
+        if (err.name === "AbortError") {
+          statusText.dataset.base = "Cancelled";
+          statusText.textContent = "Cancelled · " + elapsed();
+        } else {
+          showError(err.message || "Search failed.");
+          statusText.dataset.base = "Stopped";
+          statusText.textContent = "Stopped · " + elapsed();
+        }
+      } finally {
+        setBusy(false);
+        stopTimer();
+        controller = null;
+      }
+    });
+
+    function handleEvent(message) {
+      if (message.type === "status") {
+        statusText.dataset.base = message.message;
+        statusText.textContent = message.message + " · " + elapsed();
+        if (message.index && message.total) setProgress(message.index, message.total);
+        else setIndeterminate();
+        return;
+      }
+      if (message.type === "place") {
+        addRow(message.place || {});
+        if (message.index && message.total) setProgress(message.index, message.total);
+        return;
+      }
+      if (message.type === "done") {
+        setProgress(message.count || 1, message.count || 1);
+        const label = "Saved " + message.count + (message.count === 1 ? " business" : " businesses");
+        statusText.dataset.base = label;
+        statusText.textContent = label + " · " + elapsed();
+        resultMeta.textContent = label + ". The Excel file is ready.";
+        if (message.download_url) enableDownload(message.download_url, message.filename);
+        return;
+      }
+      if (message.type === "error") {
+        showError(message.message || "Search failed.");
+        statusText.dataset.base = "Could not finish the search";
+        statusText.textContent = "Could not finish the search · " + elapsed();
+        if (!rowCount) resultMeta.textContent = "No listings to show.";
+        if (message.download_url) enableDownload(message.download_url, message.filename);
+      }
+    }
+
+    cancelBtn.addEventListener("click", () => {
+      if (controller) controller.abort();
+    });
+  </script>
+</body>
+</html>
