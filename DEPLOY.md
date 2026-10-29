@@ -82,9 +82,9 @@ Loglar: `C:\pm2\logs\mapkesif-*.log`, `C:\pm2\logs\caddy-error.log`. Sunucuda `E
 - Sol menüde **Arama** ve **Geçmiş** sekmeleri var. Her arama ve her işletme okunurken PostgreSQL'e yazılır (`db.py`: `searches` ve `places` tabloları); iptal/hata olsa da o ana kadar okunan veri kaybolmaz. Geçmişten Excel/CSV yeniden indirilebilir (`/api/history/{id}/excel`).
 - Bağlantı `DATABASE_URL` ortam değişkeniyle verilir; sunucuda `C:\inetpub\mapkesif\.env` içinde durur (repoya girmez). `DATABASE_URL` yoksa uygulama çalışır, Geçmiş sekmesi "veritabanına ulaşılamıyor" der (yerel geliştirmede de böyle).
 - **Kurulu (29 Ekim 2026):** PostgreSQL 18'de ayrı `mapkesif` veritabanı ve `mapkesif` rolü (yalnızca kendi veritabanına yetkili; `tasktakip_app` bu veritabanına bağlanamaz). Bağlantı `C:\inetpub\mapkesif\.env` içinde (yalnızca Administrators/SYSTEM okuyabilir). Tablolar uygulama ilk bağlandığında kendiliğinden oluşur. `deploy.ps1` `.env` dosyasına dokunmaz.
-- **Yedek:** `MapkesifBackup` zamanlanmış görevi her gün 03:30'da `C:ackups\mapkesif-yedekle.ps1` çalıştırır (`pg_dump`, `C:ackups\mapkesif-<tarih>.dump`, son 7 gün tutulur; sonuç `C:ackups\son-yedek-mapkesif.txt`). tasktakip'in yedeğinden bağımsızdır.
+- **Yedek:** `MapkesifBackup` zamanlanmış görevi her gün 03:30'da `C:\backups\mapkesif-yedekle.ps1` çalıştırır (`pg_dump`, `C:\backups\mapkesif-<tarih>.dump`, son 7 gün tutulur; sonuç `C:\backups\son-yedek-mapkesif.txt`). tasktakip'in yedeğinden bağımsızdır.
 - **Güvenlik notu:** PostgreSQL yönetici şifreleri sunucuda düz metin dosyalarında duruyor (`C:\pginstall\dbadmin.txt`, `C:\pginstall\super.txt`, ayrıca `C:\pginstall\pw.tmp`). Kurulum tamamlandığı için silinmeleri önerilir (proje sahibi karar verir); bu yüzden şifre bu repoya veya sohbete yazılmaz.
-- **Geri yükleme:** `pg_restore -h 127.0.0.1 -U mapkesif -d mapkesif --clean --if-exists C:ackups\mapkesif-<tarih>.dump`
+- **Geri yükleme:** `pg_restore -h 127.0.0.1 -U mapkesif -d mapkesif --clean --if-exists C:\backups\mapkesif-<tarih>.dump`
 
 ## Başka bilgisayardaki Claude için prompt
 
